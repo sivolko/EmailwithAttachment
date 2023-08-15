@@ -1,0 +1,127 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "LogicAppName": {
+            "defaultValue": "send-email-with-attachment",
+            "type": "String"
+        }
+    },
+    "variables": {
+        "LogicAppName": "[parameters('LogicAppName')]",
+        "office365": "[concat('office365-', parameters('LogicAppName'))]"
+
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('LogicAppName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "When_a_blob_is_added_or_modified_(properties_only)_(V2)": {
+                            "recurrence": {
+                                "frequency": "Second",
+                                "interval": 5
+                            },
+                            "evaluatedRecurrence": {
+                                "frequency": "Second",
+                                "interval": 5
+                            },
+                            "splitOn": "@triggerBody()",
+                            "metadata": {
+                                "JTJmZW1haWw=": "/email"
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/triggers/batch/onupdatedfile",
+                                "queries": {
+                                    "checkBothCreatedAndModifiedDateTime": false,
+                                    "folderId": "JTJmZW1haWw=",
+                                    "maxFileCount": 1
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Get_blob_content_(V2)": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/files/@{encodeURIComponent(encodeURIComponent('/email/',triggerBody()?['Name']))}/content"
+                            }
+                        },
+                        "Send_an_email_(V2)": {
+                            "runAfter": {
+                                "Get_blob_content_(V2)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "Attachments": [
+                                        {
+                                            "ContentBytes": "@{base64(body('Get_blob_content_(V2)'))}",
+                                            "Name": "@triggerBody()?['Name']"
+                                        }
+                                    ],
+                                    "Body": "<p>Hello ,<br>\n<br>\nThis is automated mail from the &nbsp;Azure logic app</p>",
+                                    "Subject": "Auto Mail from Logic App ",
+                                    "To": "youremail@gmail.com"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['office365']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/v2/Mail"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azureblob_1": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('LogicAppName'))]",
+                                "connectionName": "[variables('LogicAppName')]",
+                                "id": "[subscriptionResourceId('Microsoft.Web/locations/managedApis', parameters('location'), 'azureblob')]"
+                            },
+                            "office365": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('office365'))]",
+                                "connectionName": "[variables('office365')]",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/office365')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
